@@ -1,5 +1,5 @@
 import logging
-
+from calc import excep, operation, rational, complex
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import (
     Updater,
@@ -10,93 +10,96 @@ from telegram.ext import (
 )
 from service_info import token
 
-
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+NUM_TYPE, OPERATION, RESULT, MENU = range(4)
 
-GENDER, PHOTO, LOCATION, BIO = range(4)
+n_type = ''
+oper = ''
+num = ''
+res = ''
 
 
 def start(update, _):
-    reply_keyboard = [['Boy', 'Girl', 'Other']]
+    reply_keyboard = [['Рациональные', 'Комплексные']]
     markup_key = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
     update.message.reply_text(
-        'Меня зовут профессор Бот. Я проведу с вами беседу. '
-        'Команда /cancel, чтобы прекратить разговор.\n\n'
-        'Ты мальчик или девочка?',
-        reply_markup=markup_key,)
-    return GENDER
+        f'Приветствую, {update.effective_user.first_name}'
+        'Добро пожаловать в калькулятор! '
+        'Команда /cancel, чтобы прекратить работу.\n\n'
+        'Выберите, с какими числами будете работать',
+        reply_markup=markup_key, )
+    return NUM_TYPE
 
 
-def gender(update, _):
+def num_type(update, _):
+    global n_type
     user = update.message.from_user
-    logger.info("Пол %s: %s", user.first_name, update.message.text)
+    n_type = user
+    logger.info("Тип числа %s: %s", user.first_name, update.message.text)
+    reply_keyboard = [['Сложение', 'Вычетание', 'Умножение', 'Деление',
+                       'Возведение в степень', 'Извлечение корня']]
+    markup_key = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
     update.message.reply_text(
-        'Хорошо. Пришли мне свою фотографию, чтоб я знал как ты '
-        'выглядишь, или отправь /skip, если стесняешься.',
-        reply_markup=ReplyKeyboardRemove(),
-    )
-    return PHOTO
+        'Теперь выберите операцию ',
+        reply_markup=markup_key, )
+    return OPERATION
 
-def photo(update, _):
+
+def operation(update, _):
+    global oper
     user = update.message.from_user
-    photo_file = update.message.photo[-1].get_file()
-    photo_file.download(f'{user.first_name}_photo.jpg')
-    logger.info("Фотография %s: %s", user.first_name, f'{user.first_name}_photo.jpg')
+    oper = user
+    logger.info("Операция %s: %s", user.first_name, update.message.text)
+    if n_type == 'Комплексные':
+        update.message.reply_text('Комплексное число имеет вид A+Bi, где A и B – действительные числа, '
+                                  'i – так называемая мнимая единица'
+                                  'Введите 4 действительных числа, по два для каждого комплексного',
+                                  reply_markup=ReplyKeyboardRemove(), )
+    else:
+        update.message.reply_text(
+            'Хорошо! Теперь введите 2 числа через пробел',
+            reply_markup=ReplyKeyboardRemove(), )
+    return RESULT
+
+
+def result(update, _):
+    global num
+    global res
+    user = update.message.from_user
+    num = excep.check_input_data(user)
+    logger.info("Пользователь %s ввел:", user.first_name, update.message.text)
+    if n_type == 'Рациональные':
+        res = rational.calc(oper, num)
+    else:
+        res = complex.calc(oper, num)
+
     update.message.reply_text(
-        'Великолепно! А теперь пришли мне свое'
-        ' местоположение, или /skip если параноик..'
+        f'Вот, что у меня получилось {res}'
+        f'{update.effective_user.first_name} желаете еще что-то посчитать?'
     )
-    return LOCATION
+    return MENU
 
 
-def skip_photo(update, _):
+def menu(update, _):
     user = update.message.from_user
-    logger.info("Пользователь %s не отправил фото.", user.first_name)
-    update.message.reply_text(
-        'Держу пари, ты выглядишь великолепно! А теперь пришлите мне'
-        ' свое местоположение, или /skip если параноик.'
-    )
-    return LOCATION
-
-
-def location(update, _):
-    user = update.message.from_user
-    user_location = update.message.location
     logger.info(
-        "Местоположение %s: %f / %f", user.first_name, user_location.latitude, user_location.longitude)
-    update.message.reply_text(
-        'Может быть, я смогу как-нибудь навестить тебя!' 
-        ' Расскажи мне что-нибудь о себе...'
-    )
-    return BIO
-
-
-def skip_location(update, _):
-    user = update.message.from_user
-    logger.info("User %s did not send a location.", user.first_name)
-    update.message.reply_text(
-        'Точно параноик! Ну ладно, тогда расскажи мне что-нибудь о себе...'
-    )
-    return BIO
-
-
-def bio(update, _):
-    user = update.message.from_user
-    logger.info("Пользователь %s рассказал: %s", user.first_name, update.message.text)
-    update.message.reply_text('Спасибо! Надеюсь, когда-нибудь снова сможем поговорить.')
-    return ConversationHandler.END
+        "Результат %s: %s", res)
+    if user.capitalize() == 'Да' or 'Yes':
+        return start()
+    else:
+        cancel()
+    return MENU
 
 
 def cancel(update, _):
     user = update.message.from_user
-    logger.info("Пользователь %s отменил разговор.", user.first_name)
+    logger.info("Пользователь %s остановил работу калькулятора.", user.first_name)
     update.message.reply_text(
-        'Мое дело предложить - Ваше отказаться'
-        ' Будет скучно - пиши.',
+        'Будет необходимо что-то посчитать, заходи.',
         reply_markup=ReplyKeyboardRemove()
     )
     return ConversationHandler.END
@@ -108,13 +111,13 @@ if __name__ == '__main__':
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            GENDER: [MessageHandler(Filters.regex('^(Boy|Girl|Other)$'), gender)],
-            PHOTO: [MessageHandler(Filters.photo, photo), CommandHandler('skip', skip_photo)],
-            LOCATION: [
-                MessageHandler(Filters.location, location),
-                CommandHandler('skip', skip_location),
+            NUM_TYPE: [MessageHandler(Filters.regex('^(Рациональные|Комплексные)$'), num_type())],
+            OPERATION: [MessageHandler(Filters.regex('^(Сложение|Вычетание|Умножение|Деление|Возведение в степень|'
+                                                     'Извлечение корня)$'), operation())],
+            RESULT: [
+                MessageHandler(Filters.text, result())
             ],
-            BIO: [MessageHandler(Filters.text & ~Filters.command, bio)],
+            MENU: [MessageHandler(Filters.text, menu())],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
